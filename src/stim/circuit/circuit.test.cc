@@ -1776,6 +1776,9 @@ Circuit stim::generate_test_circuit_with_all_operations() {
         HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 6
         I_ERROR(0.06) 7
         II_ERROR(0.07) 8 9
+        LOSS_ERROR(0.05) 10
+        HERALDED_LOSS(0.05) 11
+        M_LOSS 12
         TICK
 
         # Pauli Product Gates

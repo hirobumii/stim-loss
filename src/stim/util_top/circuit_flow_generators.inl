@@ -261,12 +261,15 @@ void CircuitFlowGeneratorSolver<W>::undo_instruction(CircuitInstruction inst) {
         case GateType::PAULI_CHANNEL_2:
         case GateType::E:
         case GateType::ELSE_CORRELATED_ERROR:
+        case GateType::LOSS_ERROR:
             // Ignored.
             break;
 
         case GateType::HERALDED_ERASE:
         case GateType::HERALDED_PAULI_CHANNEL_1:
-            // Heralds.
+        case GateType::HERALDED_LOSS:
+        case GateType::M_LOSS:
+            // Heralds / loss measurements.
             for (auto t : inst.targets) {
                 num_measurements_in_past--;
                 if (!t.is_qubit_target()) {

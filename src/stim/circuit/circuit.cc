@@ -778,8 +778,9 @@ const Circuit Circuit::aliased_noiseless_circuit() const {
     for (const auto &op : operations) {
         auto flags = GATE_DATA[op.gate_type].flags;
         if (flags & GATE_PRODUCES_RESULTS) {
-            if (op.gate_type == GateType::HERALDED_ERASE || op.gate_type == GateType::HERALDED_PAULI_CHANNEL_1) {
-                // Replace heralded errors with fixed MPAD.
+            if (op.gate_type == GateType::HERALDED_ERASE || op.gate_type == GateType::HERALDED_PAULI_CHANNEL_1 ||
+                op.gate_type == GateType::HERALDED_LOSS || op.gate_type == GateType::M_LOSS) {
+                // Replace heralded errors/loss/loss-detection with fixed MPAD=0 (no loss in noiseless simulation).
                 result.target_buf.ensure_available(op.targets.size());
                 auto &tail = result.target_buf.tail;
                 tail.ptr_end = tail.ptr_start + op.targets.size();
@@ -824,8 +825,9 @@ Circuit Circuit::without_noise() const {
     for (const auto &op : operations) {
         auto flags = GATE_DATA[op.gate_type].flags;
         if (flags & GATE_PRODUCES_RESULTS) {
-            if (op.gate_type == GateType::HERALDED_ERASE || op.gate_type == GateType::HERALDED_PAULI_CHANNEL_1) {
-                // Replace heralded errors with fixed MPAD.
+            if (op.gate_type == GateType::HERALDED_ERASE || op.gate_type == GateType::HERALDED_PAULI_CHANNEL_1 ||
+                op.gate_type == GateType::HERALDED_LOSS || op.gate_type == GateType::M_LOSS) {
+                // Replace heralded errors/loss/loss-detection with fixed MPAD=0 (no loss in noiseless simulation).
                 result.target_buf.ensure_available(op.targets.size());
                 auto &tail = result.target_buf.tail;
                 tail.ptr_end = tail.ptr_start + op.targets.size();

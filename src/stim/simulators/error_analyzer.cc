@@ -68,6 +68,15 @@ void ErrorAnalyzer::undo_gate(const CircuitInstruction &inst) {
         case GateType::HERALDED_PAULI_CHANNEL_1:
             undo_HERALDED_PAULI_CHANNEL_1(inst);
             break;
+        case GateType::LOSS_ERROR:
+            undo_LOSS_ERROR(inst);
+            break;
+        case GateType::HERALDED_LOSS:
+            undo_HERALDED_LOSS(inst);
+            break;
+        case GateType::M_LOSS:
+            undo_M_LOSS(inst);
+            break;
         case GateType::RX:
             undo_RX(inst);
             break;
@@ -359,6 +368,31 @@ void ErrorAnalyzer::undo_HERALDED_PAULI_CHANNEL_1(const CircuitInstruction &inst
                 true,
                 inst.tag);
         }
+        tracker.rec_bits.erase(tracker.num_measurements_in_past);
+    }
+}
+
+void ErrorAnalyzer::undo_LOSS_ERROR(const CircuitInstruction &inst) {
+    throw std::invalid_argument(
+        "LOSS_ERROR cannot be converted to a detector error model. "
+        "Qubit loss is not a Pauli channel, and the dynamic entanglement cut "
+        "caused by atom loss is incompatible with the static graph assumed by "
+        "the detector error model. Use Monte Carlo sampling instead.");
+}
+
+void ErrorAnalyzer::undo_HERALDED_LOSS(const CircuitInstruction &inst) {
+    throw std::invalid_argument(
+        "HERALDED_LOSS cannot be converted to a detector error model. "
+        "Although the loss is heralded, the dynamic entanglement cut caused by "
+        "atom loss is incompatible with the static graph assumed by the detector "
+        "error model. Use Monte Carlo sampling instead.");
+}
+
+void ErrorAnalyzer::undo_M_LOSS(const CircuitInstruction &inst) {
+    // M_LOSS is a classical loss-state readout. It consumes a measurement record slot
+    // without introducing any Pauli error sensitivity.
+    for (size_t k = inst.targets.size(); k-- > 0;) {
+        tracker.num_measurements_in_past--;
         tracker.rec_bits.erase(tracker.num_measurements_in_past);
     }
 }

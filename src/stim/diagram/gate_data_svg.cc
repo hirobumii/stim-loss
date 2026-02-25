@@ -94,6 +94,9 @@ std::map<std::string_view, SvgGateData> SvgGateData::make_gate_data_map() {
     result.insert({"MPAD", {1, "M", "PAD", "", "gray", "white", 18, 12, -6}});
     result.insert({"HERALDED_ERASE", {1, "HErase", "", "", "#800000", "white", 8, 10}});
     result.insert({"HERALDED_PAULI_CHANNEL_1", {4, "HERALDED_PAULI_CHANNEL_1", "", "", "#800000", "white", 14, 10}});
+    result.insert({"LOSS_ERROR", {1, "LossErr", "", "", "#800000", "white", 10, 10}});
+    result.insert({"HERALDED_LOSS", {1, "HLoss", "", "", "#800000", "white", 10, 10}});
+    result.insert({"M_LOSS", {1, "M", "Loss", "", "black", "white", 18, 12, -6}});
 
     return result;
 }

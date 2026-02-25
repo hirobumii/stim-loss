@@ -28,7 +28,8 @@ TableauSimulator<W>::TableauSimulator(std::mt19937_64 &&rng, size_t num_qubits, 
       rng(std::move(rng)),
       sign_bias(sign_bias),
       measurement_record(std::move(record)),
-      last_correlated_error_occurred(false) {
+      last_correlated_error_occurred(false),
+      is_qubit_lost(num_qubits, false) {
 }
 
 template <size_t W>
@@ -37,7 +38,8 @@ TableauSimulator<W>::TableauSimulator(const TableauSimulator<W> &other, std::mt1
       rng(std::move(rng)),
       sign_bias(other.sign_bias),
       measurement_record(other.measurement_record),
-      last_correlated_error_occurred(other.last_correlated_error_occurred) {
+      last_correlated_error_occurred(other.last_correlated_error_occurred),
+      is_qubit_lost(other.is_qubit_lost) {
 }
 
 template <size_t W>
@@ -57,9 +59,49 @@ bool TableauSimulator<W>::is_deterministic_z(size_t target) const {
 
 template <size_t W>
 void TableauSimulator<W>::do_MPP(const CircuitInstruction &target_data) {
-    decompose_mpp_operation(target_data, inv_state.num_qubits, [&](const CircuitInstruction &inst) {
-        do_gate(inst);
-    });
+    // Check whether any group has a lost qubit. If not, run the fast path.
+    bool any_group_has_loss = false;
+    {
+        PauliString<64> current(inv_state.num_qubits);
+        size_t start = 0;
+        while (accumulate_next_obs_terms_to_pauli_string_helper(target_data, &start, &current, nullptr)) {
+            current.ref().for_each_active_pauli([&](uint32_t q) {
+                if (q < is_qubit_lost.size() && is_qubit_lost[q]) any_group_has_loss = true;
+            });
+            if (any_group_has_loss) break;
+        }
+    }
+
+    if (!any_group_has_loss) {
+        decompose_mpp_operation(target_data, inv_state.num_qubits, [&](const CircuitInstruction &inst) {
+            do_gate(inst);
+        });
+        return;
+    }
+
+    // Slow path: process each group individually to handle lost-qubit groups.
+    PauliString<64> current(inv_state.num_qubits);
+    size_t start = 0;
+    size_t prev_start = 0;
+    while (accumulate_next_obs_terms_to_pauli_string_helper(target_data, &start, &current, nullptr)) {
+        bool group_has_loss = false;
+        current.ref().for_each_active_pauli([&](uint32_t q) {
+            if (q < is_qubit_lost.size() && is_qubit_lost[q]) group_has_loss = true;
+        });
+
+        if (group_has_loss) {
+            // Any qubit in this group is lost: force output to 0.
+            measurement_record.record_result(false);
+        } else {
+            // All qubits survive: execute this group as a single-group MPP.
+            SpanRef<const GateTarget> group_targets = target_data.targets.sub(prev_start, start);
+            CircuitInstruction group_inst{target_data.gate_type, target_data.args, group_targets, target_data.tag};
+            decompose_mpp_operation(group_inst, inv_state.num_qubits, [&](const CircuitInstruction &inst) {
+                do_gate(inst);
+            });
+        }
+        prev_start = start;
+    }
 }
 
 template <size_t W>
@@ -230,71 +272,152 @@ void TableauSimulator<W>::do_MX(const CircuitInstruction &target_data) {
 
 template <size_t W>
 void TableauSimulator<W>::do_MXX_disjoint_controls_segment(const CircuitInstruction &inst) {
-    // Transform from 2 qubit measurements to single qubit measurements.
-    do_ZCX(CircuitInstruction{GateType::CX, {}, inst.targets, ""});
+    // Check if any pair has a lost qubit.
+    bool has_lost_pair = false;
+    for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        if (is_qubit_lost[inst.targets[k].qubit_value()] ||
+            is_qubit_lost[inst.targets[k + 1].qubit_value()]) {
+            has_lost_pair = true;
+            break;
+        }
+    }
 
-    // Ensure measurement observables are collapsed.
-    collapse_x(inst.targets, 2);
+    if (!has_lost_pair) {
+        // Fast path: original logic.
+        do_ZCX(CircuitInstruction{GateType::CX, {}, inst.targets, ""});
+        collapse_x(inst.targets, 2);
+        for (size_t k = 0; k < inst.targets.size(); k += 2) {
+            GateTarget t1 = inst.targets[k];
+            GateTarget t2 = inst.targets[k + 1];
+            auto q = t1.qubit_value();
+            bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
+            bool b = inv_state.xs.signs[q] ^ flipped;
+            measurement_record.record_result(b);
+        }
+        noisify_new_measurements(inst.args, inst.targets.size() / 2);
+        do_ZCX(CircuitInstruction{GateType::CX, {}, inst.targets, ""});
+        return;
+    }
 
-    // Record measurement results.
+    // Slow path: process each pair individually.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
         GateTarget t1 = inst.targets[k];
         GateTarget t2 = inst.targets[k + 1];
-        auto q = t1.qubit_value();
+        auto q0 = t1.qubit_value();
+        auto q1 = t2.qubit_value();
+        if (is_qubit_lost[q0] || is_qubit_lost[q1]) {
+            measurement_record.record_result(false);
+            continue;
+        }
+        SpanRef<const GateTarget> pair(&inst.targets[k], &inst.targets[k + 2]);
+        do_ZCX(CircuitInstruction{GateType::CX, {}, pair, ""});
+        collapse_x(SpanRef<const GateTarget>(&inst.targets[k]));
         bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
-        bool b = inv_state.xs.signs[q] ^ flipped;
+        bool b = inv_state.xs.signs[q0] ^ flipped;
         measurement_record.record_result(b);
+        noisify_new_measurements(inst.args, 1);
+        do_ZCX(CircuitInstruction{GateType::CX, {}, pair, ""});
     }
-    noisify_new_measurements(inst.args, inst.targets.size() / 2);
-
-    // Untransform from single qubit measurements back to 2 qubit measurements.
-    do_ZCX(CircuitInstruction{GateType::CX, {}, inst.targets, ""});
 }
 
 template <size_t W>
 void TableauSimulator<W>::do_MYY_disjoint_controls_segment(const CircuitInstruction &inst) {
-    // Transform from 2 qubit measurements to single qubit measurements.
-    do_ZCY(CircuitInstruction{GateType::CY, {}, inst.targets, ""});
+    // Check if any pair has a lost qubit.
+    bool has_lost_pair = false;
+    for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        if (is_qubit_lost[inst.targets[k].qubit_value()] ||
+            is_qubit_lost[inst.targets[k + 1].qubit_value()]) {
+            has_lost_pair = true;
+            break;
+        }
+    }
 
-    // Ensure measurement observables are collapsed.
-    collapse_y(inst.targets, 2);
+    if (!has_lost_pair) {
+        // Fast path: original logic.
+        do_ZCY(CircuitInstruction{GateType::CY, {}, inst.targets, ""});
+        collapse_y(inst.targets, 2);
+        for (size_t k = 0; k < inst.targets.size(); k += 2) {
+            GateTarget t1 = inst.targets[k];
+            GateTarget t2 = inst.targets[k + 1];
+            auto q = t1.qubit_value();
+            bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
+            bool b = inv_state.eval_y_obs(q).sign ^ flipped;
+            measurement_record.record_result(b);
+        }
+        noisify_new_measurements(inst.args, inst.targets.size() / 2);
+        do_ZCY(CircuitInstruction{GateType::CY, {}, inst.targets, ""});
+        return;
+    }
 
-    // Record measurement results.
+    // Slow path: process each pair individually.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
         GateTarget t1 = inst.targets[k];
         GateTarget t2 = inst.targets[k + 1];
-        auto q = t1.qubit_value();
+        auto q0 = t1.qubit_value();
+        auto q1 = t2.qubit_value();
+        if (is_qubit_lost[q0] || is_qubit_lost[q1]) {
+            measurement_record.record_result(false);
+            continue;
+        }
+        SpanRef<const GateTarget> pair(&inst.targets[k], &inst.targets[k + 2]);
+        do_ZCY(CircuitInstruction{GateType::CY, {}, pair, ""});
+        collapse_y(SpanRef<const GateTarget>(&inst.targets[k]));
         bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
-        bool b = inv_state.eval_y_obs(q).sign ^ flipped;
+        bool b = inv_state.eval_y_obs(q0).sign ^ flipped;
         measurement_record.record_result(b);
+        noisify_new_measurements(inst.args, 1);
+        do_ZCY(CircuitInstruction{GateType::CY, {}, pair, ""});
     }
-    noisify_new_measurements(inst.args, inst.targets.size() / 2);
-
-    // Untransform from single qubit measurements back to 2 qubit measurements.
-    do_ZCY(CircuitInstruction{GateType::CY, {}, inst.targets, ""});
 }
 
 template <size_t W>
 void TableauSimulator<W>::do_MZZ_disjoint_controls_segment(const CircuitInstruction &inst) {
-    // Transform from 2 qubit measurements to single qubit measurements.
-    do_XCZ(CircuitInstruction{GateType::XCZ, {}, inst.targets, ""});
+    // Check if any pair has a lost qubit.
+    bool has_lost_pair = false;
+    for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        if (is_qubit_lost[inst.targets[k].qubit_value()] ||
+            is_qubit_lost[inst.targets[k + 1].qubit_value()]) {
+            has_lost_pair = true;
+            break;
+        }
+    }
 
-    // Ensure measurement observables are collapsed.
-    collapse_z(inst.targets, 2);
+    if (!has_lost_pair) {
+        // Fast path: original logic.
+        do_XCZ(CircuitInstruction{GateType::XCZ, {}, inst.targets, ""});
+        collapse_z(inst.targets, 2);
+        for (size_t k = 0; k < inst.targets.size(); k += 2) {
+            GateTarget t1 = inst.targets[k];
+            GateTarget t2 = inst.targets[k + 1];
+            auto q = t1.qubit_value();
+            bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
+            bool b = inv_state.zs.signs[q] ^ flipped;
+            measurement_record.record_result(b);
+        }
+        noisify_new_measurements(inst.args, inst.targets.size() / 2);
+        do_XCZ(CircuitInstruction{GateType::XCZ, {}, inst.targets, ""});
+        return;
+    }
 
-    // Record measurement results.
+    // Slow path: process each pair individually.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
         GateTarget t1 = inst.targets[k];
         GateTarget t2 = inst.targets[k + 1];
-        auto q = t1.qubit_value();
+        auto q0 = t1.qubit_value();
+        auto q1 = t2.qubit_value();
+        if (is_qubit_lost[q0] || is_qubit_lost[q1]) {
+            measurement_record.record_result(false);
+            continue;
+        }
+        SpanRef<const GateTarget> pair(&inst.targets[k], &inst.targets[k + 2]);
+        do_XCZ(CircuitInstruction{GateType::XCZ, {}, pair, ""});
+        collapse_z(SpanRef<const GateTarget>(&inst.targets[k]));
         bool flipped = t1.is_inverted_result_target() ^ t2.is_inverted_result_target();
-        bool b = inv_state.zs.signs[q] ^ flipped;
+        bool b = inv_state.zs.signs[q0] ^ flipped;
         measurement_record.record_result(b);
+        noisify_new_measurements(inst.args, 1);
+        do_XCZ(CircuitInstruction{GateType::XCZ, {}, pair, ""});
     }
-    noisify_new_measurements(inst.args, inst.targets.size() / 2);
-
-    // Untransform from single qubit measurements back to 2 qubit measurements.
-    do_XCZ(CircuitInstruction{GateType::XCZ, {}, inst.targets, ""});
 }
 
 template <size_t W>
@@ -408,6 +531,7 @@ void TableauSimulator<W>::do_MRX(const CircuitInstruction &target_data) {
         measurement_record.record_result(b);
         inv_state.xs.signs[q] = false;
         inv_state.zs.signs[q] = false;
+        is_qubit_lost[q] = false;
     }
     noisify_new_measurements(target_data);
 }
@@ -427,6 +551,7 @@ void TableauSimulator<W>::do_MRY(const CircuitInstruction &target_data) {
         bool b = cur_sign ^ flipped;
         measurement_record.record_result(b);
         inv_state.zs.signs[q] ^= cur_sign;
+        is_qubit_lost[q] = false;
     }
     noisify_new_measurements(target_data);
 }
@@ -446,6 +571,7 @@ void TableauSimulator<W>::do_MRZ(const CircuitInstruction &target_data) {
         measurement_record.record_result(b);
         inv_state.xs.signs[q] = false;
         inv_state.zs.signs[q] = false;
+        is_qubit_lost[q] = false;
     }
     noisify_new_measurements(target_data);
 }
@@ -475,6 +601,7 @@ void TableauSimulator<W>::do_RX(const CircuitInstruction &target_data) {
     for (auto q : target_data.targets) {
         inv_state.xs.signs[q.data] = false;
         inv_state.zs.signs[q.data] = false;
+        is_qubit_lost[q.data] = false;
     }
 }
 
@@ -488,6 +615,7 @@ void TableauSimulator<W>::do_RY(const CircuitInstruction &target_data) {
         inv_state.xs.signs[q.data] = false;
         inv_state.zs.signs[q.data] = false;
         inv_state.zs.signs[q.data] ^= inv_state.eval_y_obs(q.data).sign;
+        is_qubit_lost[q.data] = false;
     }
 }
 
@@ -500,6 +628,7 @@ void TableauSimulator<W>::do_RZ(const CircuitInstruction &target_data) {
     for (auto q : target_data.targets) {
         inv_state.xs.signs[q.data] = false;
         inv_state.zs.signs[q.data] = false;
+        is_qubit_lost[q.data] = false;
     }
 }
 
@@ -765,6 +894,13 @@ void TableauSimulator<W>::do_ZCX(const CircuitInstruction &target_data) {
     const auto &targets = target_data.targets;
     assert(!(targets.size() & 1));
     for (size_t k = 0; k < targets.size(); k += 2) {
+        uint32_t c = targets[k].data & ~TARGET_INVERTED_BIT;
+        uint32_t t = targets[k + 1].data & ~TARGET_INVERTED_BIT;
+        bool c_is_qubit = !(c & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        bool t_is_qubit = !(t & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        if ((c_is_qubit && is_qubit_lost[c]) || (t_is_qubit && is_qubit_lost[t])) {
+            continue;
+        }
         single_cx(targets[k].data, targets[k + 1].data);
     }
 }
@@ -774,6 +910,13 @@ void TableauSimulator<W>::do_ZCY(const CircuitInstruction &target_data) {
     const auto &targets = target_data.targets;
     assert(!(targets.size() & 1));
     for (size_t k = 0; k < targets.size(); k += 2) {
+        uint32_t c = targets[k].data & ~TARGET_INVERTED_BIT;
+        uint32_t t = targets[k + 1].data & ~TARGET_INVERTED_BIT;
+        bool c_is_qubit = !(c & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        bool t_is_qubit = !(t & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        if ((c_is_qubit && is_qubit_lost[c]) || (t_is_qubit && is_qubit_lost[t])) {
+            continue;
+        }
         single_cy(targets[k].data, targets[k + 1].data);
     }
 }
@@ -788,13 +931,16 @@ void TableauSimulator<W>::do_ZCZ(const CircuitInstruction &target_data) {
         q1 &= ~TARGET_INVERTED_BIT;
         q2 &= ~TARGET_INVERTED_BIT;
         if (!((q1 | q2) & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT))) {
+            if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
             inv_state.prepend_ZCZ(q1, q2);
             continue;
         } else if (!(q2 & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT))) {
+            if (is_qubit_lost[q2]) continue;
             if (read_measurement_record(q1)) {
                 inv_state.prepend_Z(q2);
             }
         } else if (!(q1 & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT))) {
+            if (is_qubit_lost[q1]) continue;
             if (read_measurement_record(q2)) {
                 inv_state.prepend_Z(q1);
             }
@@ -811,6 +957,7 @@ void TableauSimulator<W>::do_SWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto c = targets[k].data;
         auto t = targets[k + 1].data;
+        if (is_qubit_lost[c] || is_qubit_lost[t]) continue;
         inv_state.prepend_SWAP(c, t);
     }
 }
@@ -822,6 +969,7 @@ void TableauSimulator<W>::do_CXSWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_ZCX(q2, q1);
         inv_state.prepend_ZCX(q1, q2);
     }
@@ -834,6 +982,7 @@ void TableauSimulator<W>::do_CZSWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_ZCZ(q1, q2);
         inv_state.prepend_SWAP(q2, q1);
     }
@@ -846,6 +995,7 @@ void TableauSimulator<W>::do_SWAPCX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_ZCX(q1, q2);
         inv_state.prepend_ZCX(q2, q1);
     }
@@ -858,6 +1008,7 @@ void TableauSimulator<W>::do_ISWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_ISWAP_DAG(q1, q2);
     }
@@ -870,6 +1021,7 @@ void TableauSimulator<W>::do_ISWAP_DAG(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_ISWAP(q1, q2);
     }
@@ -882,6 +1034,7 @@ void TableauSimulator<W>::do_XCX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_XCX(q1, q2);
     }
 }
@@ -893,6 +1046,7 @@ void TableauSimulator<W>::do_SQRT_ZZ(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_ZZ_DAG(q1, q2);
     }
@@ -905,6 +1059,7 @@ void TableauSimulator<W>::do_SQRT_ZZ_DAG(const CircuitInstruction &target_data) 
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_ZZ(q1, q2);
     }
@@ -917,6 +1072,7 @@ void TableauSimulator<W>::do_SQRT_YY(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_YY_DAG(q1, q2);
     }
@@ -929,6 +1085,7 @@ void TableauSimulator<W>::do_SQRT_YY_DAG(const CircuitInstruction &target_data) 
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_YY(q1, q2);
     }
@@ -941,6 +1098,7 @@ void TableauSimulator<W>::do_SQRT_XX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_XX_DAG(q1, q2);
     }
@@ -953,6 +1111,7 @@ void TableauSimulator<W>::do_SQRT_XX_DAG(const CircuitInstruction &target_data) 
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         // Note: inverted because we're tracking the inverse tableau.
         inv_state.prepend_SQRT_XX(q1, q2);
     }
@@ -965,6 +1124,7 @@ void TableauSimulator<W>::do_XCY(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_XCY(q1, q2);
     }
 }
@@ -974,6 +1134,11 @@ void TableauSimulator<W>::do_XCZ(const CircuitInstruction &target_data) {
     const auto &targets = target_data.targets;
     assert(!(targets.size() & 1));
     for (size_t k = 0; k < targets.size(); k += 2) {
+        uint32_t c = targets[k + 1].data & ~TARGET_INVERTED_BIT;
+        uint32_t t = targets[k].data & ~TARGET_INVERTED_BIT;
+        bool c_is_qubit = !(c & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        bool t_is_qubit = !(t & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        if ((c_is_qubit && is_qubit_lost[c]) || (t_is_qubit && is_qubit_lost[t])) continue;
         single_cx(targets[k + 1].data, targets[k].data);
     }
 }
@@ -985,6 +1150,7 @@ void TableauSimulator<W>::do_YCX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_YCX(q1, q2);
     }
 }
@@ -996,6 +1162,7 @@ void TableauSimulator<W>::do_YCY(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
+        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
         inv_state.prepend_YCY(q1, q2);
     }
 }
@@ -1005,6 +1172,11 @@ void TableauSimulator<W>::do_YCZ(const CircuitInstruction &target_data) {
     const auto &targets = target_data.targets;
     assert(!(targets.size() & 1));
     for (size_t k = 0; k < targets.size(); k += 2) {
+        uint32_t c = targets[k + 1].data & ~TARGET_INVERTED_BIT;
+        uint32_t t = targets[k].data & ~TARGET_INVERTED_BIT;
+        bool c_is_qubit = !(c & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        bool t_is_qubit = !(t & (TARGET_RECORD_BIT | TARGET_SWEEP_BIT));
+        if ((c_is_qubit && is_qubit_lost[c]) || (t_is_qubit && is_qubit_lost[t])) continue;
         single_cy(targets[k + 1].data, targets[k].data);
     }
 }
@@ -1199,6 +1371,7 @@ void TableauSimulator<W>::ensure_large_enough_for_qubits(size_t num_qubits) {
         return;
     }
     inv_state.expand(num_qubits, 1.1);
+    is_qubit_lost.resize(inv_state.num_qubits, false);
 }
 
 template <size_t W>
@@ -1471,6 +1644,8 @@ void TableauSimulator<W>::set_num_qubits(size_t new_num_qubits) {
         }
     }
 
+    is_qubit_lost.resize(new_num_qubits);
+
     Tableau<W> old_state = std::move(inv_state);
     inv_state = Tableau<W>(new_num_qubits);
     inv_state.xs.signs.truncated_overwrite_from(old_state.xs.signs, new_num_qubits);
@@ -1564,6 +1739,47 @@ int8_t TableauSimulator<W>::peek_observable_expectation(const PauliString<W> &ob
     }
     state.do_MZ({GateType::M, {}, &anc, ""});
     return state.measurement_record.storage.back() ? -1 : +1;
+}
+
+template <size_t W>
+void TableauSimulator<W>::do_LOSS_ERROR(const CircuitInstruction &inst) {
+    RareErrorIterator::for_samples(inst.args[0], inst.targets.size(), rng, [&](size_t k) {
+        auto q = inst.targets[k].qubit_value();
+        // Collapse to Z-eigenstate (pure algebraic, no measurement record) then force to |0>.
+        GateTarget qt = GateTarget::qubit(q);
+        collapse_z(SpanRef<const GateTarget>(&qt));
+        inv_state.xs.signs[q] = false;
+        inv_state.zs.signs[q] = false;
+        // Mark as physically lost (isolated in |0> state).
+        is_qubit_lost[q] = true;
+    });
+}
+
+template <size_t W>
+void TableauSimulator<W>::do_HERALDED_LOSS(const CircuitInstruction &inst) {
+    auto nt = inst.targets.size();
+    size_t offset = measurement_record.storage.size();
+    measurement_record.storage.insert(measurement_record.storage.end(), nt, false);
+
+    RareErrorIterator::for_samples(inst.args[0], nt, rng, [&](size_t target) {
+        auto q = inst.targets[target].qubit_value();
+        // Record herald=1 (loss detected).
+        measurement_record.storage[offset + target] = true;
+        // Collapse to |0> and mark lost.
+        GateTarget qt = GateTarget::qubit(q);
+        collapse_z(SpanRef<const GateTarget>(&qt));
+        inv_state.xs.signs[q] = false;
+        inv_state.zs.signs[q] = false;
+        is_qubit_lost[q] = true;
+    });
+}
+
+template <size_t W>
+void TableauSimulator<W>::do_M_LOSS(const CircuitInstruction &inst) {
+    for (auto t : inst.targets) {
+        auto q = t.qubit_value();
+        measurement_record.storage.push_back(is_qubit_lost[q]);
+    }
 }
 
 template <size_t W>
@@ -1805,6 +2021,15 @@ void TableauSimulator<W>::do_gate(const CircuitInstruction &inst) {
             break;
         case GateType::HERALDED_PAULI_CHANNEL_1:
             do_HERALDED_PAULI_CHANNEL_1(inst);
+            break;
+        case GateType::LOSS_ERROR:
+            do_LOSS_ERROR(inst);
+            break;
+        case GateType::HERALDED_LOSS:
+            do_HERALDED_LOSS(inst);
+            break;
+        case GateType::M_LOSS:
+            do_M_LOSS(inst);
             break;
         default:
             throw std::invalid_argument(

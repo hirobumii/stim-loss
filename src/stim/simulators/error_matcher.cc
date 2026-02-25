@@ -311,7 +311,12 @@ void ErrorMatcher::rev_process_instruction(const CircuitInstruction &op) {
     }
     switch (op.gate_type) {
         case GateType::MPAD:
+        case GateType::M_LOSS:
             error_analyzer.undo_gate(op);
+            break;
+        case GateType::HERALDED_LOSS:
+            // Consume the herald bit without processing as a Pauli error channel.
+            error_analyzer.undo_M_LOSS(op);
             break;
         case GateType::E:
         case GateType::ELSE_CORRELATED_ERROR: {
@@ -326,7 +331,8 @@ void ErrorMatcher::rev_process_instruction(const CircuitInstruction &op) {
         }
         case GateType::I_ERROR:
         case GateType::II_ERROR:
-            // No effect.
+        case GateType::LOSS_ERROR:
+            // No effect on error matching.
             break;
         case GateType::X_ERROR:
             err_xyz(op, TARGET_PAULI_X_BIT);

@@ -197,6 +197,9 @@ struct ErrorAnalyzer {
     void undo_MPAD(const CircuitInstruction &inst);
     void undo_HERALDED_ERASE(const CircuitInstruction &inst);
     void undo_HERALDED_PAULI_CHANNEL_1(const CircuitInstruction &inst);
+    void undo_LOSS_ERROR(const CircuitInstruction &inst);
+    void undo_HERALDED_LOSS(const CircuitInstruction &inst);
+    void undo_M_LOSS(const CircuitInstruction &inst);
     void undo_MRX(const CircuitInstruction &inst);
     void undo_MRY(const CircuitInstruction &inst);
     void undo_MRZ(const CircuitInstruction &inst);

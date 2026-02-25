@@ -25,6 +25,9 @@ const char *stim::mbqc_decomposition(GateType gate) {
         case GateType::ELSE_CORRELATED_ERROR:
         case GateType::HERALDED_ERASE:
         case GateType::HERALDED_PAULI_CHANNEL_1:
+        case GateType::LOSS_ERROR:
+        case GateType::HERALDED_LOSS:
+        case GateType::M_LOSS:
             return nullptr;
         case GateType::MX:
             return R"CIRCUIT(

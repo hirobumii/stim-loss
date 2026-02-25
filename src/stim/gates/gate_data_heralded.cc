@@ -180,4 +180,152 @@ Examples:
             .flow_data = {},
             .h_s_cx_m_r_decomposition = nullptr,
         });
+
+    add_gate(
+        failed,
+        Gate{
+            .name = "LOSS_ERROR",
+            .id = GateType::LOSS_ERROR,
+            .best_candidate_inverse_id = GateType::LOSS_ERROR,
+            .arg_count = 1,
+            .flags = (GateFlags)(GATE_IS_SINGLE_QUBIT_GATE | GATE_IS_NOISY |
+                                 GATE_ARGS_ARE_DISJOINT_PROBABILITIES),
+            .category = "F_Noise Channels",
+            .help = R"MARKDOWN(
+A non-heralded qubit loss channel.
+
+Models physical qubit loss (e.g. atom escape in neutral-atom platforms).
+A lost qubit is isolated in the |0> computational state: subsequent
+multi-qubit gates involving a lost qubit have no effect on the other
+(surviving) qubits. Loss is tracked internally via a loss table.
+
+This is NOT a Pauli channel. It cannot be converted to a detector error
+model (DEM). Use Monte Carlo sampling to evaluate logical error rates.
+
+Parens Arguments:
+
+    A single float (p) specifying the probability of qubit loss.
+
+Targets:
+
+    Qubits to independently apply loss to.
+
+Examples:
+
+    # Lose qubit 0 with 1% probability
+    LOSS_ERROR(0.01) 0
+
+    # Lose qubits 0, 1, 2 independently with 1% probability each
+    LOSS_ERROR(0.01) 0 1 2
+
+    # 3-state measurement: detect whether qubit is lost, then measure qubit state
+    LOSS_ERROR(0.01) 0
+    M_LOSS 0    # rec[-2]: 1=atom lost, 0=atom present
+    M 0         # rec[-1]: qubit measurement (only meaningful if rec[-2]==0)
+)MARKDOWN",
+            .unitary_data = {},
+            .flow_data = {},
+            .h_s_cx_m_r_decomposition = nullptr,
+        });
+
+    add_gate(
+        failed,
+        Gate{
+            .name = "HERALDED_LOSS",
+            .id = GateType::HERALDED_LOSS,
+            .best_candidate_inverse_id = GateType::HERALDED_LOSS,
+            .arg_count = 1,
+            .flags = (GateFlags)(GATE_IS_SINGLE_QUBIT_GATE | GATE_IS_NOISY |
+                                 GATE_ARGS_ARE_DISJOINT_PROBABILITIES | GATE_PRODUCES_RESULTS),
+            .category = "F_Noise Channels",
+            .help = R"MARKDOWN(
+A heralded qubit loss channel.
+
+Models physical qubit loss with mid-circuit detection (e.g. shelving
+readout in neutral-atom or ion-trap platforms). Whether or not the
+loss event fires is recorded into the measurement record: 0 means the
+qubit survived, 1 means the qubit was lost.
+
+A lost qubit is isolated in the |0> state: subsequent multi-qubit gates
+involving a lost qubit have no effect on the surviving qubits. The
+dynamic entanglement cut caused by atom loss is incompatible with the
+static graph assumed by the detector error model. This channel cannot
+be converted to a DEM. Use Monte Carlo sampling instead.
+
+Parens Arguments:
+
+    A single float (p) specifying the probability of qubit loss.
+
+Targets:
+
+    Qubits to independently apply heralded loss to.
+
+Examples:
+
+    # Lose qubit 0 with 1% probability; herald the result
+    HERALDED_LOSS(0.01) 0
+    DETECTOR rec[-1]  # 1=lost, 0=survived
+
+    # Check for loss, then perform a corrective operation
+    HERALDED_LOSS(0.01) 0
+    CX rec[-1] 1  # Classical feed-forward: if lost, trigger recovery on qubit 1
+)MARKDOWN",
+            .unitary_data = {},
+            .flow_data = {},
+            .h_s_cx_m_r_decomposition = nullptr,
+        });
+
+    add_gate(
+        failed,
+        Gate{
+            .name = "M_LOSS",
+            .id = GateType::M_LOSS,
+            .best_candidate_inverse_id = GateType::M_LOSS,
+            .arg_count = 0,
+            .flags = (GateFlags)(GATE_IS_SINGLE_QUBIT_GATE | GATE_PRODUCES_RESULTS),
+            .category = "F_Noise Channels",
+            .help = R"MARKDOWN(
+A loss-state measurement gate.
+
+Directly reads the loss table (set by LOSS_ERROR or HERALDED_LOSS) and
+records 1 if the qubit is lost, 0 if it is present. Does not disturb
+the Pauli frame or quantum state.
+
+Use M_LOSS together with M to implement 3-state measurement that
+distinguishes |0>, |1>, and vacuum (lost atom):
+
+    M_LOSS q   # rec[-2]: 1=atom lost, 0=atom present
+    M q        # rec[-1]: quantum state (only meaningful if rec[-2]==0)
+
+| M_LOSS | M | Physical meaning               |
+|--------|---|-------------------------------|
+|   1    | x | Atom lost (erasure)           |
+|   0    | 0 | Atom present, qubit in |0>    |
+|   0    | 1 | Atom present, qubit in |1>    |
+
+Since M_LOSS writes into the standard measurement record, it supports
+classical feed-forward via rec[-i] syntax:
+
+    M_LOSS 0
+    CX rec[-1] 1  # If qubit 0 is lost, apply X to qubit 1
+
+Targets:
+
+    Qubits whose loss state to measure.
+
+Examples:
+
+    LOSS_ERROR(0.01) 0
+    M_LOSS 0   # Detect loss on qubit 0
+    M 0        # Quantum measurement of qubit 0
+
+    # Classical feed-forward based on loss
+    HERALDED_LOSS(0.01) 0
+    M_LOSS 0
+    CX rec[-1] 1
+)MARKDOWN",
+            .unitary_data = {},
+            .flow_data = {},
+            .h_s_cx_m_r_decomposition = nullptr,
+        });
 }

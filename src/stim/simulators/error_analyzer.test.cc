@@ -3602,7 +3602,14 @@ TEST(ErrorAnalyzer, heralded_erase) {
 
 TEST(ErrorAnalyzer, runs_on_general_circuit) {
     auto circuit = generate_test_circuit_with_all_operations();
-    auto dem = ErrorAnalyzer::circuit_to_detector_error_model(circuit, false, false, false, true, false, false);
+    // LOSS_ERROR and HERALDED_LOSS cannot be converted to a DEM (dynamic graph topology).
+    // Verify the expected exception is raised.
+    ASSERT_THROW(
+        { ErrorAnalyzer::circuit_to_detector_error_model(circuit, false, false, false, true, false, false); },
+        std::invalid_argument);
+    // Verify that the noiseless version of the circuit (which excludes loss gates) can be analyzed.
+    auto dem = ErrorAnalyzer::circuit_to_detector_error_model(
+        circuit.without_noise(), false, false, false, true, false, false);
     ASSERT_GT(dem.instructions.size(), 0);
 }
 

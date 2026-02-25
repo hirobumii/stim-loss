@@ -285,6 +285,9 @@ struct QuirkExporter {
                     case GateType::ELSE_CORRELATED_ERROR:
                     case GateType::HERALDED_ERASE:
                     case GateType::HERALDED_PAULI_CHANNEL_1:
+                    case GateType::LOSS_ERROR:
+                    case GateType::HERALDED_LOSS:
+                    case GateType::M_LOSS:
                     case GateType::II:
                     case GateType::I_ERROR:
                     case GateType::II_ERROR:

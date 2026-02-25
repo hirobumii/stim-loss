@@ -58,7 +58,7 @@ constexpr inline uint16_t gate_name_to_hash(std::string_view text) {
     constexpr uint16_t const4 = 9042;
     constexpr uint16_t const5 = 4916;
     constexpr uint16_t const6 = 4048;
-    constexpr uint16_t const7 = 7081;
+    constexpr uint16_t const7 = 12169;
 
     size_t n = text.size();
     const char *v = text.data();
@@ -88,7 +88,7 @@ constexpr inline uint16_t gate_name_to_hash(std::string_view text) {
     return result & 0x1FF;
 }
 
-constexpr size_t NUM_DEFINED_GATES = 82;
+constexpr size_t NUM_DEFINED_GATES = 85;
 
 enum class GateType : uint8_t {
     NOT_A_GATE = 0,
@@ -143,6 +143,10 @@ enum class GateType : uint8_t {
     // Heralded noise channels
     HERALDED_ERASE,
     HERALDED_PAULI_CHANNEL_1,
+    // Loss channels
+    LOSS_ERROR,
+    HERALDED_LOSS,
+    M_LOSS,
     // Pauli gates
     I,
     X,

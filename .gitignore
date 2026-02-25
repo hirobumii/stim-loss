@@ -44,3 +44,4 @@ build.ninja
 node_modules
 MODULE.bazel.lock
 .ninja_lock
+build/

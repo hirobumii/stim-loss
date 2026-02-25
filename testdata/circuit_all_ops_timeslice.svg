@@ -457,6 +457,14 @@
 <rect x="4553.2" y="144" width="32" height="32" stroke="black" fill="white"/>
 <text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="10" x="4569.2" y="160">ERR<tspan baseline-shift="sub" font-size="10">II</tspan></text>
 <text dominant-baseline="hanging" text-anchor="middle" font-family="monospace" font-size="10" stroke="red" x="4569.2" y="180">0.07</text>
+<rect x="4617.2" y="144" width="32" height="32" stroke="black" fill="#800000"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="10" x="4633.2" y="160" fill="white">LossErr</text>
+<text dominant-baseline="hanging" text-anchor="middle" font-family="monospace" font-size="10" stroke="red" x="4633.2" y="180">0.05</text>
+<rect x="4681.2" y="144" width="32" height="32" stroke="black" fill="#800000"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="10" x="4697.2" y="160" fill="white">HLoss</text>
+<text dominant-baseline="hanging" text-anchor="middle" font-family="monospace" font-size="10" stroke="red" x="4697.2" y="180">0.05</text>
+<rect x="4745.2" y="144" width="32" height="32" stroke="black" fill="black"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="18" x="4761.2" y="154" fill="white">M<tspan baseline-shift="sub" font-size="12">Loss</tspan></text>
 <path d="M176,625.6 C192 571.2,134.4 465.6,80 449.6 L144,449.6 " fill="none" stroke="black" stroke-width="5"/>
 <rect x="160" y="609.6" width="32" height="32" stroke="black" fill="black"/>
 <text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="12" x="176" y="625.6" fill="white">MPP<tspan baseline-shift="sub" font-size="10">X</tspan></text>

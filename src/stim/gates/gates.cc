@@ -67,6 +67,8 @@ GateType Gate::hadamard_conjugated(bool ignoring_sign) const {
         case GateType::SQRT_YY_DAG:
         case GateType::MYY:
         case GateType::SWAP:
+        case GateType::M_LOSS:
+            // M_LOSS reads the loss table and is basis-independent: H M_LOSS H == M_LOSS.
             return id;
 
         case GateType::MY:
@@ -333,6 +335,8 @@ void GateDataMap::add_gate(bool &failed, const Gate &gate) {
     auto h = gate_name_to_hash(gate.name);
     auto &hash_loc = hashed_name_to_gate_type_table[h];
     if (!hash_loc.expected_name.empty()) {
+        std::cerr << "DEBUG: Collision details: adding gate " << gate.name << " (id=" << (int)gate.id << ", hash=" << h << ")\n";
+        std::cerr << "DEBUG: Hash slot already has: " << hash_loc.expected_name << " (id=" << (int)hash_loc.id << ")\n";
         std::cerr << "GATE COLLISION " << gate.name << " vs " << items[(size_t)hash_loc.id].name << "\n";
         failed = true;
         return;

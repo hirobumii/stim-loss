@@ -515,6 +515,9 @@ std::map<std::string_view, std::shared_ptr<GltfMesh>> stim_draw_internal::make_g
         f("MPAD", 13, 9),
         f("HERALDED_ERASE", 14, 9),
         f("HERALDED_PAULI_CHANNEL_1", 15, 9),
+        f("LOSS_ERROR", 16, 9),
+        f("HERALDED_LOSS", 17, 9),
+        f("M_LOSS", 18, 9),
 
         f("SPP:X", 0, 10),
         f("SPP:Y", 1, 10),

@@ -45,6 +45,7 @@ FrameSimulator<W>::FrameSimulator(
       batch_size(0),
       x_table(0, 0),
       z_table(0, 0),
+      loss_table(0, 0),
       m_record(0, 0),
       det_record(0, 0),
       obs_record(0, 0),
@@ -72,6 +73,8 @@ void FrameSimulator<W>::configure_for(
     keeping_detection_data = storing_any_detections;
     x_table.destructive_resize(new_circuit_stats.num_qubits, batch_size);
     z_table.destructive_resize(new_circuit_stats.num_qubits, batch_size);
+    loss_table.destructive_resize(new_circuit_stats.num_qubits, batch_size);
+    loss_table.clear();
     rng_buffer.destructive_resize(batch_size);
     tmp_storage.destructive_resize(batch_size);
     last_correlated_error_occurred.destructive_resize(batch_size);
@@ -97,6 +100,7 @@ void FrameSimulator<W>::ensure_safe_to_do_circuit_with_stats(const CircuitStats 
     if (x_table.num_major_bits_padded() < stats.num_qubits) {
         x_table.resize(stats.num_qubits * 2, batch_size);
         z_table.resize(stats.num_qubits * 2, batch_size);
+        loss_table.resize(stats.num_qubits * 2, batch_size);
     }
     while (num_qubits < stats.num_qubits) {
         if (guarantee_anticommutation_via_frame_randomization) {
@@ -157,6 +161,7 @@ void FrameSimulator<W>::reset_all() {
     } else {
         z_table.clear();
     }
+    loss_table.clear();
     m_record.clear();
     det_record.clear();
     obs_record.clear();
@@ -215,6 +220,7 @@ void FrameSimulator<W>::do_RX(const CircuitInstruction &inst) {
             x_table[q].randomize(z_table[q].num_bits_padded(), rng);
         }
         z_table[q].clear();
+        loss_table[q].clear();
     }
 }
 
@@ -259,6 +265,7 @@ void FrameSimulator<W>::do_RY(const CircuitInstruction &inst) {
             z_table[q].randomize(z_table[q].num_bits_padded(), rng);
         }
         x_table[q] = z_table[q];
+        loss_table[q].clear();
     }
 }
 
@@ -270,6 +277,7 @@ void FrameSimulator<W>::do_RZ(const CircuitInstruction &inst) {
         if (guarantee_anticommutation_via_frame_randomization) {
             z_table[q].randomize(z_table[q].num_bits_padded(), rng);
         }
+        loss_table[q].clear();
     }
 }
 
@@ -284,6 +292,7 @@ void FrameSimulator<W>::do_MRX(const CircuitInstruction &target_data) {
         if (guarantee_anticommutation_via_frame_randomization) {
             x_table[q].randomize(x_table[q].num_bits_padded(), rng);
         }
+        loss_table[q].clear();
     }
 }
 
@@ -299,6 +308,7 @@ void FrameSimulator<W>::do_MRY(const CircuitInstruction &target_data) {
             z_table[q].randomize(z_table[q].num_bits_padded(), rng);
         }
         x_table[q] = z_table[q];
+        loss_table[q].clear();
     }
 }
 
@@ -313,6 +323,7 @@ void FrameSimulator<W>::do_MRZ(const CircuitInstruction &target_data) {
         if (guarantee_anticommutation_via_frame_randomization) {
             z_table[q].randomize(z_table[q].num_bits_padded(), rng);
         }
+        loss_table[q].clear();
     }
 }
 
@@ -434,6 +445,7 @@ void FrameSimulator<W>::do_ZCX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         single_cx(targets[k].data, targets[k + 1].data);
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -443,6 +455,7 @@ void FrameSimulator<W>::do_ZCY(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         single_cy(targets[k].data, targets[k + 1].data);
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -471,6 +484,7 @@ void FrameSimulator<W>::do_ZCZ(const CircuitInstruction &target_data) {
             // Both targets are bits. No effect.
         }
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -489,6 +503,7 @@ void FrameSimulator<W>::do_SWAP(const CircuitInstruction &target_data) {
                 std::swap(x1, x2);
             });
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -502,6 +517,7 @@ void FrameSimulator<W>::do_ISWAP(const CircuitInstruction &target_data) {
             z2 = t1;
             std::swap(x1, x2);
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -513,6 +529,7 @@ void FrameSimulator<W>::do_CXSWAP(const CircuitInstruction &target_data) {
             x1 ^= x2;
             x2 ^= x1;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -524,6 +541,7 @@ void FrameSimulator<W>::do_CZSWAP(const CircuitInstruction &target_data) {
             z1 ^= x2;
             z2 ^= x1;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -535,6 +553,7 @@ void FrameSimulator<W>::do_SWAPCX(const CircuitInstruction &target_data) {
             x2 ^= x1;
             x1 ^= x2;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -545,6 +564,7 @@ void FrameSimulator<W>::do_SQRT_XX(const CircuitInstruction &target_data) {
             x1 ^= dz;
             x2 ^= dz;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -557,6 +577,7 @@ void FrameSimulator<W>::do_SQRT_YY(const CircuitInstruction &target_data) {
             x2 ^= d;
             z2 ^= d;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -567,6 +588,7 @@ void FrameSimulator<W>::do_SQRT_ZZ(const CircuitInstruction &target_data) {
             z1 ^= dx;
             z2 ^= dx;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -576,6 +598,7 @@ void FrameSimulator<W>::do_XCX(const CircuitInstruction &target_data) {
             x1 ^= z2;
             x2 ^= z1;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -586,6 +609,7 @@ void FrameSimulator<W>::do_XCY(const CircuitInstruction &target_data) {
             x2 ^= z1;
             z2 ^= z1;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -595,6 +619,7 @@ void FrameSimulator<W>::do_XCZ(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         single_cx(targets[k + 1].data, targets[k].data);
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -605,6 +630,7 @@ void FrameSimulator<W>::do_YCX(const CircuitInstruction &target_data) {
             x1 ^= z2;
             z1 ^= z2;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -618,6 +644,7 @@ void FrameSimulator<W>::do_YCY(const CircuitInstruction &target_data) {
             x2 ^= y1;
             z2 ^= y1;
         });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -627,6 +654,7 @@ void FrameSimulator<W>::do_YCZ(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         single_cy(targets[k + 1].data, targets[k].data);
     }
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -658,6 +686,7 @@ void FrameSimulator<W>::do_DEPOLARIZE2(const CircuitInstruction &target_data) {
         x_table[t2][sample_index] ^= (bool)(p & 4);
         z_table[t2][sample_index] ^= (bool)(p & 8);
     });
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -695,9 +724,106 @@ void FrameSimulator<W>::do_Z_ERROR(const CircuitInstruction &target_data) {
 }
 
 template <size_t W>
+void FrameSimulator<W>::apply_loss_cleanup(SpanRef<const GateTarget> targets) {
+    for (auto t : targets) {
+        if (t.is_qubit_target()) {
+            auto q = t.qubit_value();
+            x_table[q].for_each_word(loss_table[q], [](simd_word<W> &x, simd_word<W> &loss) {
+                x = loss.andnot(x);
+            });
+            z_table[q].for_each_word(loss_table[q], [](simd_word<W> &z, simd_word<W> &loss) {
+                z = loss.andnot(z);
+            });
+        }
+    }
+}
+
+template <size_t W>
+void FrameSimulator<W>::do_LOSS_ERROR(const CircuitInstruction &inst) {
+    const auto &targets = inst.targets;
+    RareErrorIterator::for_samples(inst.args[0], targets.size() * batch_size, rng, [&](size_t s) {
+        auto shot = s % batch_size;
+        auto qubit = targets[s / batch_size].qubit_value();
+        loss_table[qubit][shot] = 1;
+        x_table[qubit][shot] = 0;
+        z_table[qubit][shot] = 0;
+    });
+}
+
+template <size_t W>
+void FrameSimulator<W>::do_HERALDED_LOSS(const CircuitInstruction &inst) {
+    auto nt = inst.targets.size();
+    m_record.reserve_space_for_results(nt);
+    for (size_t k = 0; k < nt; k++) {
+        m_record.storage[m_record.stored + k].clear();
+    }
+
+    RareErrorIterator::for_samples(inst.args[0], nt * batch_size, rng, [&](size_t s) {
+        auto shot = s % batch_size;
+        auto target = s / batch_size;
+        auto qubit = inst.targets[target].qubit_value();
+        m_record.storage[m_record.stored + target][shot] = 1;
+        loss_table[qubit][shot] = 1;
+        x_table[qubit][shot] = 0;
+        z_table[qubit][shot] = 0;
+    });
+
+    m_record.stored += nt;
+    m_record.unwritten += nt;
+}
+
+template <size_t W>
+void FrameSimulator<W>::do_M_LOSS(const CircuitInstruction &inst) {
+    auto nt = inst.targets.size();
+    m_record.reserve_space_for_results(nt);
+    for (size_t k = 0; k < nt; k++) {
+        auto q = inst.targets[k].qubit_value();
+        m_record.storage[m_record.stored + k].clear();
+        m_record.storage[m_record.stored + k] ^= loss_table[q];
+    }
+    m_record.stored += nt;
+    m_record.unwritten += nt;
+}
+
+template <size_t W>
 void FrameSimulator<W>::do_MPP(const CircuitInstruction &target_data) {
+    // Pre-parse groups to build per-group loss masks.
+    // When any qubit in a joint measurement group is lost, the entire measurement
+    // result is forced to 0 (global failure of the entanglement chain).
+    std::vector<simd_bits<W>> group_loss_masks;
+    {
+        PauliString<64> current(num_qubits);
+        size_t start = 0;
+        while (accumulate_next_obs_terms_to_pauli_string_helper(target_data, &start, &current, nullptr)) {
+            simd_bits<W> mask(batch_size);
+            if (!current.ref().has_no_pauli_terms()) {
+                current.ref().for_each_active_pauli([&](uint32_t q) {
+                    mask |= loss_table[q];
+                });
+            }
+            group_loss_masks.push_back(std::move(mask));
+        }
+    }
+
+    size_t group_idx = 0;
     decompose_mpp_operation(target_data, num_qubits, [&](const CircuitInstruction &inst) {
-        safe_do_instruction(inst);
+        if (inst.gate_type == GateType::M) {
+            // M instruction accumulates one row per non-overlapping group in this batch.
+            size_t row_start = m_record.stored;
+            safe_do_instruction(inst);
+            size_t n_written = m_record.stored - row_start;
+            for (size_t i = 0; i < n_written; i++) {
+                m_record.storage[row_start + i].for_each_word(
+                    group_loss_masks[group_idx + i],
+                    [](simd_word<W> &result, simd_word<W> &loss_any) { result = loss_any.andnot(result); });
+            }
+            group_idx += n_written;
+        } else if (inst.gate_type == GateType::MPAD) {
+            safe_do_instruction(inst);
+            group_idx++;
+        } else {
+            safe_do_instruction(inst);
+        }
     });
 }
 
@@ -741,6 +867,7 @@ void FrameSimulator<W>::do_PAULI_CHANNEL_2(const CircuitInstruction &target_data
             do_ELSE_CORRELATED_ERROR(d);
         });
     last_correlated_error_occurred = tmp_storage;
+    apply_loss_cleanup(target_data.targets);
 }
 
 template <size_t W>
@@ -843,9 +970,14 @@ void FrameSimulator<W>::do_MXX_disjoint_controls_segment(const CircuitInstructio
     // Transform from 2 qubit measurements to single qubit measurements.
     do_ZCX(CircuitInstruction{GateType::CX, {}, inst.targets, ""});
 
-    // Record measurement results.
+    // Record measurement results with global failure: if either qubit lost, force result to 0.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        auto q0 = inst.targets[k].qubit_value();
+        auto q1 = inst.targets[k + 1].qubit_value();
+        size_t row = m_record.stored;
         do_MX(CircuitInstruction{GateType::MX, inst.args, SpanRef<const GateTarget>{&inst.targets[k]}, ""});
+        m_record.storage[row].for_each_word(loss_table[q0], loss_table[q1],
+            [](simd_word<W> &result, simd_word<W> &l0, simd_word<W> &l1) { result = (l0 | l1).andnot(result); });
     }
 
     // Untransform from single qubit measurements back to 2 qubit measurements.
@@ -857,9 +989,14 @@ void FrameSimulator<W>::do_MYY_disjoint_controls_segment(const CircuitInstructio
     // Transform from 2 qubit measurements to single qubit measurements.
     do_ZCY(CircuitInstruction{GateType::CY, {}, inst.targets, ""});
 
-    // Record measurement results.
+    // Record measurement results with global failure: if either qubit lost, force result to 0.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        auto q0 = inst.targets[k].qubit_value();
+        auto q1 = inst.targets[k + 1].qubit_value();
+        size_t row = m_record.stored;
         do_MY(CircuitInstruction{GateType::MY, inst.args, SpanRef<const GateTarget>{&inst.targets[k]}, ""});
+        m_record.storage[row].for_each_word(loss_table[q0], loss_table[q1],
+            [](simd_word<W> &result, simd_word<W> &l0, simd_word<W> &l1) { result = (l0 | l1).andnot(result); });
     }
 
     // Untransform from single qubit measurements back to 2 qubit measurements.
@@ -871,9 +1008,14 @@ void FrameSimulator<W>::do_MZZ_disjoint_controls_segment(const CircuitInstructio
     // Transform from 2 qubit measurements to single qubit measurements.
     do_XCZ(CircuitInstruction{GateType::XCZ, {}, inst.targets, ""});
 
-    // Record measurement results.
+    // Record measurement results with global failure: if either qubit lost, force result to 0.
     for (size_t k = 0; k < inst.targets.size(); k += 2) {
+        auto q0 = inst.targets[k].qubit_value();
+        auto q1 = inst.targets[k + 1].qubit_value();
+        size_t row = m_record.stored;
         do_MZ(CircuitInstruction{GateType::M, inst.args, SpanRef<const GateTarget>{&inst.targets[k]}, ""});
+        m_record.storage[row].for_each_word(loss_table[q0], loss_table[q1],
+            [](simd_word<W> &result, simd_word<W> &l0, simd_word<W> &l1) { result = (l0 | l1).andnot(result); });
     }
 
     // Untransform from single qubit measurements back to 2 qubit measurements.
@@ -1051,6 +1193,15 @@ void FrameSimulator<W>::do_gate(const CircuitInstruction &inst) {
             break;
         case GateType::HERALDED_PAULI_CHANNEL_1:
             do_HERALDED_PAULI_CHANNEL_1(inst);
+            break;
+        case GateType::LOSS_ERROR:
+            do_LOSS_ERROR(inst);
+            break;
+        case GateType::HERALDED_LOSS:
+            do_HERALDED_LOSS(inst);
+            break;
+        case GateType::M_LOSS:
+            do_M_LOSS(inst);
             break;
 
         case GateType::SQRT_XX:

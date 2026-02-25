@@ -49,6 +49,7 @@ struct FrameSimulator {
     size_t batch_size;                 // Number of instances being tracked.
     simd_bit_table<W> x_table;         // x_table[q][k] is whether or not there's an X error on qubit q in instance k.
     simd_bit_table<W> z_table;         // z_table[q][k] is whether or not there's a Z error on qubit q in instance k.
+    simd_bit_table<W> loss_table;      // loss_table[q][k] is 1 if qubit q is lost in instance k.
     MeasureRecordBatch<W> m_record;    // The measurement record.
     MeasureRecordBatch<W> det_record;  // Detection event record.
     simd_bit_table<W> obs_record;      // Accumulating observable flip record.
@@ -145,6 +146,10 @@ struct FrameSimulator {
     void do_ELSE_CORRELATED_ERROR(const CircuitInstruction &inst);
     void do_HERALDED_ERASE(const CircuitInstruction &inst);
     void do_HERALDED_PAULI_CHANNEL_1(const CircuitInstruction &inst);
+    void do_LOSS_ERROR(const CircuitInstruction &inst);
+    void do_HERALDED_LOSS(const CircuitInstruction &inst);
+    void do_M_LOSS(const CircuitInstruction &inst);
+    void apply_loss_cleanup(SpanRef<const GateTarget> targets);
 
    private:
     void do_MXX_disjoint_controls_segment(const CircuitInstruction &inst);

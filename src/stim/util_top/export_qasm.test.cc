@@ -347,7 +347,7 @@ def rx(qubit q0) { reset q0; h q0; }
 def ry(qubit q0) { reset q0; h q0; s q0; }
 
 qreg q[18];
-creg rec[25];
+creg rec[27];
 creg dets[1];
 creg obs[2];
 creg sweep[1];
@@ -405,6 +405,8 @@ barrier q;
 
 rec[0] = 0;
 rec[1] = 0;
+rec[2] = 0;
+rec[3] = 0;
 barrier q;
 
 // --- begin decomposed MPP X0*Y1*Z2 Z0*Z1
@@ -412,13 +414,13 @@ h q[0];
 hyz q[1];
 cx q[1], q[0];
 cx q[2], q[0];
-measure q[0] -> rec[2];
+measure q[0] -> rec[4];
 cx q[1], q[0];
 cx q[2], q[0];
 hyz q[1];
 h q[0];
 cx q[1], q[0];
-measure q[0] -> rec[3];
+measure q[0] -> rec[5];
 cx q[1], q[0];
 // --- end decomposed MPP
 // --- begin decomposed SPP X0*Y1*Z2 X3
@@ -451,22 +453,22 @@ h q[2];
 // --- end decomposed SPP
 barrier q;
 
-rec[4] = mrx(q[0]);
-rec[5] = mry(q[1]);
-rec[6] = mr(q[2]);
-rec[7] = mx(q[3]);
-rec[8] = my(q[4]);
-measure q[5] -> rec[9];
-measure q[6] -> rec[10];
+rec[6] = mrx(q[0]);
+rec[7] = mry(q[1]);
+rec[8] = mr(q[2]);
+rec[9] = mx(q[3]);
+rec[10] = my(q[4]);
+measure q[5] -> rec[11];
+measure q[6] -> rec[12];
 rx(q[7]);
 ry(q[8]);
 reset q[9];
 barrier q;
 
-rec[11] = mxx(q[0], q[1]);
-rec[12] = mxx(q[2], q[3]);
-rec[13] = myy(q[4], q[5]);
-rec[14] = mzz(q[6], q[7]);
+rec[13] = mxx(q[0], q[1]);
+rec[14] = mxx(q[2], q[3]);
+rec[15] = myy(q[4], q[5]);
+rec[16] = mzz(q[6], q[7]);
 barrier q;
 
 h q[0];
@@ -486,28 +488,28 @@ barrier q;
 
 barrier q;
 
-rec[15] = mr(q[0]);
-rec[16] = mr(q[0]);
-dets[0] = rec[16] ^ 0;
-obs[0] = obs[0] ^ rec[16] ^ 0;
-rec[17] = 0;
-rec[18] = 1;
+rec[17] = mr(q[0]);
+rec[18] = mr(q[0]);
+dets[0] = rec[18] ^ 0;
+obs[0] = obs[0] ^ rec[18] ^ 0;
 rec[19] = 0;
+rec[20] = 1;
+rec[21] = 0;
 obs[1] = obs[1] ^ 0;
 // Warning: ignored pauli terms in OBSERVABLE_INCLUDE(1) Z2 Z3
 barrier q;
 
-rec[20] = mrx(q[0]) ^ 1;
-rec[21] = my(q[1]) ^ 1;
-rec[22] = mzz(q[2], q[3]) ^ 1;
-obs[1] = obs[1] ^ rec[22] ^ 1;
-rec[23] = myy(q[4], q[5]);
+rec[22] = mrx(q[0]) ^ 1;
+rec[23] = my(q[1]) ^ 1;
+rec[24] = mzz(q[2], q[3]) ^ 1;
+obs[1] = obs[1] ^ rec[24] ^ 1;
+rec[25] = myy(q[4], q[5]);
 // --- begin decomposed MPP X6*!Y7*Z8
 h q[6];
 hyz q[7];
 cx q[7], q[6];
 cx q[8], q[6];
-measure q[6] -> rec[24];rec[24] = rec[24] ^ 1;
+measure q[6] -> rec[26];rec[26] = rec[26] ^ 1;
 cx q[7], q[6];
 cx q[8], q[6];
 hyz q[7];
@@ -515,13 +517,13 @@ h q[6];
 // --- end decomposed MPP
 barrier q;
 
-if (ms[24]) {
+if (ms[26]) {
     X q[0];
 }
 if (sweep[0]) {
     Y q[1];
 }
-if (ms[24]) {
+if (ms[26]) {
     Z q[2];
 }
 )QASM");
@@ -581,7 +583,7 @@ gate ycy q0, q1 { s q0; s q0; s q0; s q1; s q1; s q1; h q0; cx q0, q1; h q0; s q
 gate ycz q0, q1 { s q0; s q0; s q0; cx q1, q0; s q0; }
 
 qreg q[18];
-creg rec[22];
+creg rec[24];
 
 id q[0];
 x q[1];
@@ -641,13 +643,13 @@ h q[0];
 hyz q[1];
 cx q[1], q[0];
 cx q[2], q[0];
-measure q[0] -> rec[2];
+measure q[0] -> rec[4];
 cx q[1], q[0];
 cx q[2], q[0];
 hyz q[1];
 h q[0];
 cx q[1], q[0];
-measure q[0] -> rec[3];
+measure q[0] -> rec[5];
 cx q[1], q[0];
 // --- end decomposed MPP
 // --- begin decomposed SPP X0*Y1*Z2 X3
@@ -680,22 +682,22 @@ h q[2];
 // --- end decomposed SPP
 barrier q;
 
-h q[0]; measure q[0] -> rec[4]; reset q[0]; h q[0]; // decomposed MRX
-s q[1]; s q[1]; s q[1]; h q[1]; measure q[1] -> rec[5]; reset q[1]; h q[1]; s q[1]; // decomposed MRY
-measure q[2] -> rec[6]; reset q[2]; // decomposed MR
-h q[3]; measure q[3] -> rec[7]; h q[3]; // decomposed MX
-s q[4]; s q[4]; s q[4]; h q[4]; measure q[4] -> rec[8]; h q[4]; s q[4]; // decomposed MY
-measure q[5] -> rec[9];
-measure q[6] -> rec[10];
+h q[0]; measure q[0] -> rec[6]; reset q[0]; h q[0]; // decomposed MRX
+s q[1]; s q[1]; s q[1]; h q[1]; measure q[1] -> rec[7]; reset q[1]; h q[1]; s q[1]; // decomposed MRY
+measure q[2] -> rec[8]; reset q[2]; // decomposed MR
+h q[3]; measure q[3] -> rec[9]; h q[3]; // decomposed MX
+s q[4]; s q[4]; s q[4]; h q[4]; measure q[4] -> rec[10]; h q[4]; s q[4]; // decomposed MY
+measure q[5] -> rec[11];
+measure q[6] -> rec[12];
 reset q[7]; h q[7]; // decomposed RX
 reset q[8]; h q[8]; s q[8]; // decomposed RY
 reset q[9];
 barrier q;
 
-cx q[0], q[1]; h q[0]; measure q[0] -> rec[11]; h q[0]; cx q[0], q[1]; // decomposed MXX
-cx q[2], q[3]; h q[2]; measure q[2] -> rec[12]; h q[2]; cx q[2], q[3]; // decomposed MXX
-s q[4]; s q[5]; cx q[4], q[5]; h q[4]; measure q[4] -> rec[13]; s q[5]; s q[5]; h q[4]; cx q[4], q[5]; s q[4]; s q[5]; // decomposed MYY
-cx q[6], q[7]; measure q[7] -> rec[14]; cx q[6], q[7]; // decomposed MZZ
+cx q[0], q[1]; h q[0]; measure q[0] -> rec[13]; h q[0]; cx q[0], q[1]; // decomposed MXX
+cx q[2], q[3]; h q[2]; measure q[2] -> rec[14]; h q[2]; cx q[2], q[3]; // decomposed MXX
+s q[4]; s q[5]; cx q[4], q[5]; h q[4]; measure q[4] -> rec[15]; s q[5]; s q[5]; h q[4]; cx q[4], q[5]; s q[4]; s q[5]; // decomposed MYY
+cx q[6], q[7]; measure q[7] -> rec[16]; cx q[6], q[7]; // decomposed MZZ
 barrier q;
 
 h q[0];
@@ -715,20 +717,20 @@ barrier q;
 
 barrier q;
 
-measure q[0] -> rec[15]; reset q[0]; // decomposed MR
-measure q[0] -> rec[16]; reset q[0]; // decomposed MR
+measure q[0] -> rec[17]; reset q[0]; // decomposed MR
+measure q[0] -> rec[18]; reset q[0]; // decomposed MR
 barrier q;
 
-h q[0]; x q[0];measure q[0] -> rec[17];x q[0]; reset q[0]; h q[0]; // decomposed MRX
-s q[1]; s q[1]; s q[1]; h q[1]; x q[1];measure q[1] -> rec[18];x q[1]; h q[1]; s q[1]; // decomposed MY
-cx q[2], q[3]; x q[3];measure q[3] -> rec[19];x q[3]; cx q[2], q[3]; // decomposed MZZ
-s q[4]; s q[5]; cx q[4], q[5]; h q[4]; measure q[4] -> rec[20]; s q[5]; s q[5]; h q[4]; cx q[4], q[5]; s q[4]; s q[5]; // decomposed MYY
+h q[0]; x q[0];measure q[0] -> rec[19];x q[0]; reset q[0]; h q[0]; // decomposed MRX
+s q[1]; s q[1]; s q[1]; h q[1]; x q[1];measure q[1] -> rec[20];x q[1]; h q[1]; s q[1]; // decomposed MY
+cx q[2], q[3]; x q[3];measure q[3] -> rec[21];x q[3]; cx q[2], q[3]; // decomposed MZZ
+s q[4]; s q[5]; cx q[4], q[5]; h q[4]; measure q[4] -> rec[22]; s q[5]; s q[5]; h q[4]; cx q[4], q[5]; s q[4]; s q[5]; // decomposed MYY
 // --- begin decomposed MPP X6*!Y7*Z8
 h q[6];
 hyz q[7];
 cx q[7], q[6];
 cx q[8], q[6];
-x q[6];measure q[6] -> rec[21];x q[6];
+x q[6];measure q[6] -> rec[23];x q[6];
 cx q[7], q[6];
 cx q[8], q[6];
 hyz q[7];
