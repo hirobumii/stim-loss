@@ -64,9 +64,12 @@
     - [E](#E)
     - [ELSE_CORRELATED_ERROR](#ELSE_CORRELATED_ERROR)
     - [HERALDED_ERASE](#HERALDED_ERASE)
+    - [HERALDED_LOSS](#HERALDED_LOSS)
     - [HERALDED_PAULI_CHANNEL_1](#HERALDED_PAULI_CHANNEL_1)
     - [II_ERROR](#II_ERROR)
     - [I_ERROR](#I_ERROR)
+    - [LOSS_ERROR](#LOSS_ERROR)
+    - [M_LOSS](#M_LOSS)
     - [PAULI_CHANNEL_1](#PAULI_CHANNEL_1)
     - [PAULI_CHANNEL_2](#PAULI_CHANNEL_2)
     - [X_ERROR](#X_ERROR)
@@ -3370,6 +3373,40 @@ Examples:
     DETECTOR rec[-4]
     DETECTOR rec[-5]
 
+<a name="HERALDED_LOSS"></a>
+### The 'HERALDED_LOSS' Instruction
+
+A heralded qubit loss channel.
+
+Models physical qubit loss with mid-circuit detection (e.g. shelving
+readout in neutral-atom or ion-trap platforms). Whether or not the
+loss event fires is recorded into the measurement record: 0 means the
+qubit survived, 1 means the qubit was lost.
+
+A lost qubit is isolated in the |0> state: subsequent multi-qubit gates
+involving a lost qubit have no effect on the surviving qubits. The
+dynamic entanglement cut caused by atom loss is incompatible with the
+static graph assumed by the detector error model. This channel cannot
+be converted to a DEM. Use Monte Carlo sampling instead.
+
+Parens Arguments:
+
+    A single float (p) specifying the probability of qubit loss.
+
+Targets:
+
+    Qubits to independently apply heralded loss to.
+
+Examples:
+
+    # Lose qubit 0 with 1% probability; herald the result
+    HERALDED_LOSS(0.01) 0
+    DETECTOR rec[-1]  # 1=lost, 0=survived
+
+    # Check for loss, then perform a corrective operation
+    HERALDED_LOSS(0.01) 0
+    CX rec[-1] 1  # Classical feed-forward: if lost, trigger recovery on qubit 1
+
 <a name="HERALDED_PAULI_CHANNEL_1"></a>
 ### The 'HERALDED_PAULI_CHANNEL_1' Instruction
 
@@ -3513,6 +3550,82 @@ Examples:
 
     # checks for you that the disjoint probabilities in the arguments are legal
     I_ERROR[MULTIPLE_NOISE_MECHANISMS](0.1, 0.2) 0 2 4
+
+<a name="LOSS_ERROR"></a>
+### The 'LOSS_ERROR' Instruction
+
+A non-heralded qubit loss channel.
+
+Models physical qubit loss (e.g. atom escape in neutral-atom platforms).
+A lost qubit is isolated in the |0> computational state: subsequent
+multi-qubit gates involving a lost qubit have no effect on the other
+(surviving) qubits. Loss is tracked internally via a loss table.
+
+This is NOT a Pauli channel. It cannot be converted to a detector error
+model (DEM). Use Monte Carlo sampling to evaluate logical error rates.
+
+Parens Arguments:
+
+    A single float (p) specifying the probability of qubit loss.
+
+Targets:
+
+    Qubits to independently apply loss to.
+
+Examples:
+
+    # Lose qubit 0 with 1% probability
+    LOSS_ERROR(0.01) 0
+
+    # Lose qubits 0, 1, 2 independently with 1% probability each
+    LOSS_ERROR(0.01) 0 1 2
+
+    # 3-state measurement: detect whether qubit is lost, then measure qubit state
+    LOSS_ERROR(0.01) 0
+    M_LOSS 0    # rec[-2]: 1=atom lost, 0=atom present
+    M 0         # rec[-1]: qubit measurement (only meaningful if rec[-2]==0)
+
+<a name="M_LOSS"></a>
+### The 'M_LOSS' Instruction
+
+A loss-state measurement gate.
+
+Directly reads the loss table (set by LOSS_ERROR or HERALDED_LOSS) and
+records 1 if the qubit is lost, 0 if it is present. Does not disturb
+the Pauli frame or quantum state.
+
+Use M_LOSS together with M to implement 3-state measurement that
+distinguishes |0>, |1>, and vacuum (lost atom):
+
+    M_LOSS q   # rec[-2]: 1=atom lost, 0=atom present
+    M q        # rec[-1]: quantum state (only meaningful if rec[-2]==0)
+
+| M_LOSS | M | Physical meaning               |
+|--------|---|-------------------------------|
+|   1    | x | Atom lost (erasure)           |
+|   0    | 0 | Atom present, qubit in |0>    |
+|   0    | 1 | Atom present, qubit in |1>    |
+
+Since M_LOSS writes into the standard measurement record, it supports
+classical feed-forward via rec[-i] syntax:
+
+    M_LOSS 0
+    CX rec[-1] 1  # If qubit 0 is lost, apply X to qubit 1
+
+Targets:
+
+    Qubits whose loss state to measure.
+
+Examples:
+
+    LOSS_ERROR(0.01) 0
+    M_LOSS 0   # Detect loss on qubit 0
+    M 0        # Quantum measurement of qubit 0
+
+    # Classical feed-forward based on loss
+    HERALDED_LOSS(0.01) 0
+    M_LOSS 0
+    CX rec[-1] 1
 
 <a name="PAULI_CHANNEL_1"></a>
 ### The 'PAULI_CHANNEL_1' Instruction
