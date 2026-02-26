@@ -80,6 +80,9 @@ function make_gate_alias_map() {
     result.set("Z_ERROR", {ignore: true});
     result.set("HERALDED_ERASE", {ignore: true});
     result.set("HERALDED_PAULI_CHANNEL_1", {ignore: true});
+    result.set("LOSS_ERROR", {ignore: true});
+    result.set("HERALDED_LOSS", {ignore: true});
+    result.set("M_LOSS", {ignore: true});
 
     // Annotations.
     result.set("MPAD", {ignore: true});
