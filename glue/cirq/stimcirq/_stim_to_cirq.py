@@ -629,6 +629,15 @@ class CircuitTranslationTracker:
             "HERALDED_PAULI_CHANNEL_1": not_impl(
                 "Converting HERALDED_PAULI_CHANNEL_1 to cirq is not supported."
             ),
+            "LOSS_ERROR": not_impl(
+                "Converting LOSS_ERROR to cirq is not supported."
+            ),
+            "HERALDED_LOSS": not_impl(
+                "Converting HERALDED_LOSS to cirq is not supported."
+            ),
+            "M_LOSS": not_impl(
+                "Converting M_LOSS to cirq is not supported."
+            ),
         }
 
 
