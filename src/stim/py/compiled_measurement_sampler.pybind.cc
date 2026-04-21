@@ -23,6 +23,34 @@
 using namespace stim;
 using namespace stim_pybind;
 
+namespace {
+
+bool circuit_has_loss_instructions(const Circuit &circuit) {
+    bool has_loss = false;
+    circuit.for_each_operation([&](const CircuitInstruction &op) {
+        switch (op.gate_type) {
+            case GateType::LOSS_ERROR:
+            case GateType::HERALDED_LOSS:
+            case GateType::M_LOSS:
+                has_loss = true;
+                break;
+            default:
+                break;
+        }
+    });
+    return has_loss;
+}
+
+void reject_compiled_measurement_sampler_for_loss_circuits(const Circuit &circuit) {
+    if (circuit_has_loss_instructions(circuit)) {
+        throw std::invalid_argument(
+            "compile_sampler is unsupported for circuits containing LOSS_ERROR, HERALDED_LOSS, or M_LOSS. "
+            "Use stim.TableauSimulator for physical loss simulation instead.");
+    }
+}
+
+}  // namespace
+
 CompiledMeasurementSampler::CompiledMeasurementSampler(
     simd_bits<MAX_BITWORD_WIDTH> ref_sample, Circuit circuit, bool skip_reference_sample, std::mt19937_64 &&rng)
     : ref_sample(ref_sample), circuit(circuit), skip_reference_sample(skip_reference_sample), rng(std::move(rng)) {
@@ -65,6 +93,7 @@ CompiledMeasurementSampler stim_pybind::py_init_compiled_sampler(
     bool skip_reference_sample,
     const pybind11::object &seed,
     const pybind11::object &reference_sample) {
+    reject_compiled_measurement_sampler_for_loss_circuits(circuit);
     if (reference_sample.is_none()) {
         simd_bits<MAX_BITWORD_WIDTH> ref_sample =
             skip_reference_sample ? simd_bits<MAX_BITWORD_WIDTH>(circuit.count_measurements())

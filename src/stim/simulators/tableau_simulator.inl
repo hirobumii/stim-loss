@@ -957,8 +957,10 @@ void TableauSimulator<W>::do_SWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto c = targets[k].data;
         auto t = targets[k + 1].data;
-        if (is_qubit_lost[c] || is_qubit_lost[t]) continue;
         inv_state.prepend_SWAP(c, t);
+        bool tmp = is_qubit_lost[c];
+        is_qubit_lost[c] = is_qubit_lost[t];
+        is_qubit_lost[t] = tmp;
     }
 }
 

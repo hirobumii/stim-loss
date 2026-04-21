@@ -10,27 +10,27 @@ This fork introduces three new instructions:
 
 | Instruction | Description |
 |---|---|
-| `LOSS_ERROR(p)` | With probability `p`, permanently lose a qubit. Subsequent two-qubit gates on the lost qubit are silently skipped. |
+| `LOSS_ERROR(p)` | With probability `p`, permanently lose a qubit. The loss state is attached to the qubit and therefore moves through `SWAP`. Subsequent non-`SWAP` two-qubit gates on a lost qubit are silently skipped. |
 | `HERALDED_LOSS(p)` | Same as above, but appends a herald bit to the measurement record (1 = lost, 0 = alive). |
 | `M_LOSS` | Read the loss state of a qubit directly (1 = lost, 0 = alive). Does not disturb the quantum state. |
 
 ### Three-Outcome Readout Pattern
 
-Combine `M_LOSS` and `M` to implement full ternary readout:
+Combine `M_LOSS` and `M` to implement full ternary readout. For circuits containing loss instructions, use `stim.TableauSimulator` instead of `circuit.compile_sampler()`:
 
 ```python
 import stim
 
-circuit = stim.Circuit("""
+sim = stim.TableauSimulator()
+sim.do_circuit(stim.Circuit("""
     LOSS_ERROR(0.05) 0
     M_LOSS 0   # rec[-2]: 1 = lost,  0 = alive
     M 0        # rec[-1]: qubit value (only meaningful if alive)
-""")
-sampler = circuit.compile_sampler()
-samples = sampler.sample(shots=1000)
-# samples[:,0] == 1  →  atom lost
-# samples[:,0] == 0, samples[:,1] == 0  →  alive, |0⟩
-# samples[:,0] == 0, samples[:,1] == 1  →  alive, |1⟩
+"""))
+sample = sim.current_measurement_record()
+# sample[0] == 1  →  atom lost
+# sample[0] == 0, sample[1] == 0  →  alive, |0⟩
+# sample[0] == 0, sample[1] == 1  →  alive, |1⟩
 ```
 
 ### More Examples
@@ -51,6 +51,14 @@ circuit = stim.Circuit("""
     M 1                 # qubit 1 is completely unaffected
 """)
 
+# Loss follows the qubit through SWAP
+sim = stim.TableauSimulator()
+sim.do_circuit(stim.Circuit("""
+    LOSS_ERROR(1.0) 0
+    SWAP 0 1
+    M_LOSS 0 1          # rec[0] = 0, rec[1] = 1
+"""))
+
 # Reset restores a lost qubit
 circuit = stim.Circuit("""
     LOSS_ERROR(1.0) 0
@@ -69,6 +77,6 @@ circuit = stim.Circuit("""
 
 ### Limitations of This Fork
 
-- **No DEM export for loss circuits.** `LOSS_ERROR` and `HERALDED_LOSS` raise an error when `circuit.detector_error_model()` is called, because atom loss creates a dynamic entanglement graph that cannot be represented as a static Detector Error Model. Use Monte Carlo sampling (`circuit.compile_sampler()`) instead.
+- **No DEM export for loss circuits.** `LOSS_ERROR` and `HERALDED_LOSS` raise an error when `circuit.detector_error_model()` is called, because atom loss creates a dynamic entanglement graph that cannot be represented as a static Detector Error Model.
+- **No compiled measurement sampling for loss circuits.** `circuit.compile_sampler()` is intentionally unsupported for circuits containing `LOSS_ERROR`, `HERALDED_LOSS`, or `M_LOSS`, because compiled sampling uses a frame-simulator path that does not model physical loss transport. Use `stim.TableauSimulator` instead.
 - `M_LOSS` is safe to use in DEM export — it consumes its measurement record slot without generating any Pauli error sensitivity.
-

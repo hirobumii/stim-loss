@@ -110,6 +110,27 @@ def test_do():
     assert s.current_inverse_tableau() == stim.Tableau.from_named_gate("S_DAG")
 
 
+def test_swap_moves_loss_state():
+    s = stim.TableauSimulator()
+    s.do_circuit(stim.Circuit("""
+        LOSS_ERROR(1) 0
+        SWAP 0 1
+        M_LOSS 0 1
+    """))
+    assert s.current_measurement_record() == [False, True]
+
+
+def test_non_physical_swap_gates_do_not_move_loss_state():
+    for gate in ["ISWAP", "CXSWAP", "SWAPCX", "CZSWAP"]:
+        s = stim.TableauSimulator()
+        s.do_circuit(stim.Circuit(f"""
+            LOSS_ERROR(1) 0
+            {gate} 0 1
+            M_LOSS 0 1
+        """))
+        assert s.current_measurement_record() == [True, False], gate
+
+
 def test_peek_bloch():
     s = stim.TableauSimulator()
     assert s.peek_bloch(0) == stim.PauliString("+Z")

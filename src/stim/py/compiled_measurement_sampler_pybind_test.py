@@ -190,3 +190,13 @@ def test_circuit_sampler_actually_fills_array():
     sampler = circuit.compile_detector_sampler()
     measure_data = sampler.sample(shots=10000)
     assert np.all(measure_data)
+
+
+@pytest.mark.parametrize("circuit_text", [
+    "LOSS_ERROR(0.1) 0\nM 0",
+    "HERALDED_LOSS(0.1) 0\nM 0",
+    "M_LOSS 0",
+])
+def test_compile_sampler_rejects_loss_circuits(circuit_text: str):
+    with pytest.raises(ValueError, match="compile_sampler is unsupported"):
+        stim.Circuit(circuit_text).compile_sampler()
