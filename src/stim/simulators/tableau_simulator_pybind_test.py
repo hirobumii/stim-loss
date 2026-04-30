@@ -110,25 +110,45 @@ def test_do():
     assert s.current_inverse_tableau() == stim.Tableau.from_named_gate("S_DAG")
 
 
-def test_swap_moves_loss_state():
-    s = stim.TableauSimulator()
-    s.do_circuit(stim.Circuit("""
-        LOSS_ERROR(1) 0
-        SWAP 0 1
-        M_LOSS 0 1
-    """))
-    assert s.current_measurement_record() == [False, True]
+def test_swap_like_gates_move_loss_state():
+    for gate in ["SWAP", "CXSWAP", "SWAPCX", "CZSWAP", "SWAPCZ"]:
+        for lost_qubit, expected_record in [(0, [False, True]), (1, [True, False])]:
+            s = stim.TableauSimulator()
+            s.do_circuit(stim.Circuit(f"""
+                LOSS_ERROR(1) {lost_qubit}
+                {gate} 0 1
+                M_LOSS 0 1
+            """))
+            assert s.current_measurement_record() == expected_record, (gate, lost_qubit)
 
 
-def test_non_physical_swap_gates_do_not_move_loss_state():
-    for gate in ["ISWAP", "CXSWAP", "SWAPCX", "CZSWAP"]:
-        s = stim.TableauSimulator()
-        s.do_circuit(stim.Circuit(f"""
-            LOSS_ERROR(1) 0
-            {gate} 0 1
-            M_LOSS 0 1
-        """))
-        assert s.current_measurement_record() == [True, False], gate
+def test_iswap_gates_do_not_move_loss_state():
+    for gate in ["ISWAP", "ISWAP_DAG"]:
+        for lost_qubit, expected_record in [(0, [True, False]), (1, [False, True])]:
+            s = stim.TableauSimulator()
+            s.do_circuit(stim.Circuit(f"""
+                LOSS_ERROR(1) {lost_qubit}
+                {gate} 0 1
+                M_LOSS 0 1
+            """))
+            assert s.current_measurement_record() == expected_record, (gate, lost_qubit)
+
+
+def test_swap_like_gates_move_surviving_state_past_loss():
+    for gate in ["SWAP", "CXSWAP", "SWAPCX", "CZSWAP", "SWAPCZ"]:
+        for lost_qubit, live_qubit, measure_qubit, expected_record in [
+            (0, 1, 0, [True, False, True]),
+            (1, 0, 1, [True, True, False]),
+        ]:
+            s = stim.TableauSimulator()
+            s.do_circuit(stim.Circuit(f"""
+                X {live_qubit}
+                LOSS_ERROR(1) {lost_qubit}
+                {gate} 0 1
+                M {measure_qubit}
+                M_LOSS 0 1
+            """))
+            assert s.current_measurement_record() == expected_record, (gate, lost_qubit)
 
 
 def test_peek_bloch():

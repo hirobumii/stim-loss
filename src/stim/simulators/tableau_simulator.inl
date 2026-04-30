@@ -971,9 +971,15 @@ void TableauSimulator<W>::do_CXSWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
-        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
-        inv_state.prepend_ZCX(q2, q1);
-        inv_state.prepend_ZCX(q1, q2);
+        if (!is_qubit_lost[q1] && !is_qubit_lost[q2]) {
+            inv_state.prepend_ZCX(q2, q1);
+            inv_state.prepend_ZCX(q1, q2);
+        } else {
+            inv_state.prepend_SWAP(q1, q2);
+        }
+        bool tmp = is_qubit_lost[q1];
+        is_qubit_lost[q1] = is_qubit_lost[q2];
+        is_qubit_lost[q2] = tmp;
     }
 }
 
@@ -984,9 +990,15 @@ void TableauSimulator<W>::do_CZSWAP(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
-        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
-        inv_state.prepend_ZCZ(q1, q2);
-        inv_state.prepend_SWAP(q2, q1);
+        if (!is_qubit_lost[q1] && !is_qubit_lost[q2]) {
+            inv_state.prepend_ZCZ(q1, q2);
+            inv_state.prepend_SWAP(q2, q1);
+        } else {
+            inv_state.prepend_SWAP(q1, q2);
+        }
+        bool tmp = is_qubit_lost[q1];
+        is_qubit_lost[q1] = is_qubit_lost[q2];
+        is_qubit_lost[q2] = tmp;
     }
 }
 
@@ -997,9 +1009,15 @@ void TableauSimulator<W>::do_SWAPCX(const CircuitInstruction &target_data) {
     for (size_t k = 0; k < targets.size(); k += 2) {
         auto q1 = targets[k].data;
         auto q2 = targets[k + 1].data;
-        if (is_qubit_lost[q1] || is_qubit_lost[q2]) continue;
-        inv_state.prepend_ZCX(q1, q2);
-        inv_state.prepend_ZCX(q2, q1);
+        if (!is_qubit_lost[q1] && !is_qubit_lost[q2]) {
+            inv_state.prepend_ZCX(q1, q2);
+            inv_state.prepend_ZCX(q2, q1);
+        } else {
+            inv_state.prepend_SWAP(q1, q2);
+        }
+        bool tmp = is_qubit_lost[q1];
+        is_qubit_lost[q1] = is_qubit_lost[q2];
+        is_qubit_lost[q2] = tmp;
     }
 }
 
