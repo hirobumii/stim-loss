@@ -25,7 +25,7 @@ MAIN_FILES = glob.glob("src/**/main.cc", recursive=True)
 HEADER_FILES = glob.glob("src/**/*.h", recursive=True) + glob.glob("src/**/*.inl", recursive=True)
 RELEVANT_SOURCE_FILES = sorted(set(ALL_SOURCE_FILES) - set(TEST_FILES + PERF_FILES + MAIN_FILES + MUX_SOURCE_FILES))
 
-__version__ = '1.16.dev0'
+__version__ = '1.15.0+loss.0.3'
 
 if platform.system().startswith('Win'):
     common_compile_args = [
@@ -113,7 +113,7 @@ setup(
     version=__version__,
     author='Craig Gidney',
     author_email='craig.gidney@gmail.com',
-    url='https://github.com/quantumlib/stim',
+    url='https://github.com/hirobumii/stim-loss',
     license='Apache 2',
     description='A fast library for analyzing with quantum stabilizer circuits.',
     long_description=long_description,
